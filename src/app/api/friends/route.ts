@@ -9,8 +9,11 @@ export async function GET() {
 
   await connectDB();
   const me = await User.findOne({ externalId: user.id });
+  
+  // Guard clause: if no user or no friends array yet
   if (!me || !me.friends) return NextResponse.json([]);
 
+  // Find all friend details
   const friends = await User.find({ externalId: { $in: me.friends } }).select("externalId name");
   return NextResponse.json(friends);
 }

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Plus, X, Trash2, Calendar, Smile } from "lucide-react";
+import { Plus, X, Trash2, Calendar } from "lucide-react";
 import { useMapEvents } from "react-leaflet";
 
+// Dynamic imports to prevent SSR issues with Leaflet
 const MapContainer = dynamicImport(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
 const TileLayer = dynamicImport(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false });
 const Marker = dynamicImport(() => import("react-leaflet").then((mod) => mod.Marker), { ssr: false });
@@ -36,6 +37,7 @@ export default function MapView() {
   useEffect(() => {
     setIsMounted(true);
     (async () => {
+      // Fix for Leaflet marker icons
       const L = await import("leaflet");
       await import("leaflet/dist/leaflet.css");
       delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -81,9 +83,12 @@ export default function MapView() {
         <MapClickHandler onMapClick={(lat, lng) => { setNewLocation({ lat, lng }); setSelectedMemory(null); }} />
         
         {memories.map((m) => (
-          <Marker key={m._id} position={[m.coords.lat, m.coords.lng]} eventHandlers={{ click: () => { setSelectedMemory(m); setNewLocation(null); } }}>
-            <Popup>{m.title}</Popup>
-          </Marker>
+          // SAFEGUARD: Check if coords exist before rendering Marker
+          (m.coords && m.coords.lat && m.coords.lng) ? (
+            <Marker key={m._id} position={[m.coords.lat, m.coords.lng]} eventHandlers={{ click: () => { setSelectedMemory(m); setNewLocation(null); } }}>
+                <Popup>{m.title}</Popup>
+            </Marker>
+          ) : null
         ))}
         {newLocation && <Marker position={[newLocation.lat, newLocation.lng]} opacity={0.5} />}
       </MapContainer>

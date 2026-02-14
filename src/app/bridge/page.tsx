@@ -32,13 +32,11 @@ function BridgeContent() {
   const [isMutual, setIsMutual] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   
-  // NEW: Track friend status via DB
   const [isFriend, setIsFriend] = useState(false);
   const [friendLoading, setFriendLoading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Check DB for friend status when matched
   const checkFriendStatus = async (partnerId: string) => {
     if (!partnerId) return;
     setFriendLoading(true);
@@ -66,7 +64,6 @@ function BridgeContent() {
     };
     socket.on("connect", handleConnect);
     
-    // When match is found, verify friend status immediately
     socket.on("match_found", (data) => {
         const partnerData = { id: data.partnerId, name: data.partnerName, externalId: data.partnerExternalId };
         startChat(partnerData);
@@ -85,12 +82,20 @@ function BridgeContent() {
     });
 
     socket.on("online_users_update", (onlineUsers: any[]) => {
+      // Logic: If I have a ?dm=ID query, try to find them
       const dmTargetId = searchParams.get("dm");
+      const dmName = searchParams.get("name");
+
       if (dmTargetId && status === "idle") {
         const target = onlineUsers.find(u => u.externalId === dmTargetId);
         if (target) {
             startChat(target);
             checkFriendStatus(target.externalId);
+        } else if (dmName) {
+            // OPTIONAL: If they are offline, we can still "start" the chat visually
+            // but we need to warn the user or handle the message differently.
+            // For now, we'll just alert. To enable offline messaging, you'd need DB storage for messages.
+            // alert(`${dmName} is currently offline.`);
         }
       }
     });
@@ -105,8 +110,6 @@ function BridgeContent() {
     setMode("human");
     setPartner(targetUser);
     setStatus("matched");
-    // We do NOT rely on local storage for history to keep it simple and clean
-    // If you want history, we should fetch it from DB, but for now let's fix friends
   };
 
   const handleFindConnection = () => {
@@ -160,14 +163,11 @@ function BridgeContent() {
     setInput(""); setShowOptions(false);
   };
 
-  // NEW: DB-Based Toggle Friend
   const toggleFriend = async () => {
       if (!partner || partner.type === 'ai') return;
       setFriendLoading(true);
-
       try {
           if (isFriend) {
-              // Remove
               const res = await fetch("/api/friends", {
                   method: "DELETE",
                   body: JSON.stringify({ targetId: partner.externalId }),
@@ -175,10 +175,7 @@ function BridgeContent() {
               });
               if (res.ok) setIsFriend(false);
           } else {
-              // Add
-              // We use socket to add, but we should also just refresh status
               if (socket && user) socket.emit("add_friend", { targetId: partner.externalId, myId: user.id });
-              // For UI responsiveness, assume success if socket connected
               setIsFriend(true);
           }
       } catch(e) { alert("Action failed"); }
@@ -230,7 +227,6 @@ function BridgeContent() {
               <button onClick={reset}><ArrowLeft size={20}/></button>
               <span className="font-bold flex items-center gap-2">{partner?.name} {isMutual && <span className="bg-pink-500 text-[10px] px-2 rounded-full">Mutual</span>}</span>
               
-              {/* FRIEND TOGGLE BUTTON */}
               <button onClick={toggleFriend} disabled={friendLoading} className="relative">
                 {friendLoading ? <Loader2 className="animate-spin text-white" size={20} /> : (
                     <Heart size={20} className={isFriend ? "fill-pink-500 text-pink-500" : "text-white"} />

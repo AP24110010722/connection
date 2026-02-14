@@ -3,23 +3,29 @@
 import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import MapView from "@/components/MapView";
-import { motion } from "framer-motion";
-import { Plus, Users, Heart, Trash2, HeartHandshake } from "lucide-react";
+import { Users, HeartHandshake } from "lucide-react"; // Removed unnecessary imports
 import Link from "next/link";
-import io from "socket.io-client";
-
-const socket = io("http://localhost:3001");
+import io from "socket.io-client"; // Import io, but don't use it yet
 
 export default function MemoryMapPage() {
   const { user: currentUser, isLoaded } = useUser();
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
 
   useEffect(() => {
+    // Initialize socket INSIDE useEffect
+    const socket = io("http://localhost:3001");
+
     if (isLoaded && currentUser) {
       socket.emit("user_joined", { externalId: currentUser.id, name: currentUser.firstName });
     }
+
     socket.on("online_users_update", (users) => setOnlineUsers(users));
-    return () => { socket.off("online_users_update"); };
+
+    // Cleanup function to disconnect when leaving the page
+    return () => { 
+        socket.off("online_users_update"); 
+        socket.disconnect();
+    };
   }, [currentUser, isLoaded]);
 
   const uniqueFriends = onlineUsers
