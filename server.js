@@ -7,29 +7,25 @@ const io = new Server(httpServer, {
 });
 
 let waitingUsers = []; 
-let onlineUsers = []; // Tracks unique users globally
+let onlineUsers = []; 
 
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // UNIQUE USER JOIN: Prevents duplicates by filtering by externalId (Clerk ID)
   socket.on("user_joined", (userData) => {
-    // Remove existing connections for this specific user ID
     onlineUsers = onlineUsers.filter(u => u.externalId !== userData.externalId);
-    
     const user = { 
       id: socket.id, 
       externalId: userData.externalId, 
       name: userData.name || "Anonymous", 
+      gender: userData.gender, // Store gender for matching
       status: "online" 
     };
     onlineUsers.push(user);
     io.emit("online_users_update", onlineUsers);
   });
 
-  // SCHEDULED MESSAGE LOGIC: Uses a server-side timer
   socket.on("schedule_message", ({ to, text, delayMs }) => {
-    console.log(`Scheduling message for partner ${to} in ${delayMs}ms`);
     setTimeout(() => {
       io.to(to).emit("receive_message", {
         senderId: "System-Schedule",
@@ -39,28 +35,31 @@ io.on("connection", (socket) => {
     }, delayMs);
   });
 
-  // MATCHING LOGIC
   socket.on("find_connection", (userData) => {
-    if (waitingUsers.length > 0) {
-      const partner = waitingUsers.shift();
-      const matchTime = new Date().toISOString();
+    // Look for a partner of the OPPOSITE gender
+    const partnerIndex = waitingUsers.findIndex(
+      (u) => u.gender !== userData.gender && u.externalId !== userData.externalId
+    );
 
-      io.to(socket.id).emit("match_found", {
-        partnerId: partner.id,
-        partnerName: "Hidden Heart",
-        matchTime
+    if (partnerIndex !== -1) {
+      const partner = waitingUsers.splice(partnerIndex, 1)[0];
+      
+      io.to(socket.id).emit("match_found", { 
+        partnerId: partner.id, 
+        partnerName: "Hidden Heart", 
+        partnerExternalId: partner.externalId 
       });
-
-      io.to(partner.id).emit("match_found", {
-        partnerId: socket.id,
-        partnerName: "Hidden Heart",
-        matchTime
+      io.to(partner.id).emit("match_found", { 
+        partnerId: socket.id, 
+        partnerName: "Hidden Heart", 
+        partnerExternalId: userData.externalId 
       });
     } else {
       waitingUsers.push({ 
         id: socket.id, 
         externalId: userData.externalId, 
-        name: userData.name 
+        name: userData.name, 
+        gender: userData.gender 
       });
     }
   });
@@ -70,11 +69,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send_message", ({ to, text }) => {
-    io.to(to).emit("receive_message", {
-      senderId: socket.id,
-      text: text,
-      timestamp: new Date().toISOString()
-    });
+    io.to(to).emit("receive_message", { senderId: socket.id, text: text, timestamp: new Date().toISOString() });
   });
 
   socket.on("disconnect", () => {

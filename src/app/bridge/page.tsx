@@ -24,331 +24,117 @@ export default function BridgePage() {
   const { user, isLoaded } = useUser(); 
   const [mode, setMode] = useState<"human" | "ai" | null>(null);
   const [status, setStatus] = useState<"idle" | "waiting" | "matched">("idle");
-  const [partner, setPartner] = useState<{ id: string; name: string } | null>(null);
-  const [isNameRevealed, setIsNameRevealed] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  const [selectedAI, setSelectedAI] = useState<string | null>(null);
+  const [partner, setPartner] = useState<{ id: string; name: string; partnerExternalId: string } | null>(null);
+  const [userGender, setUserGender] = useState<"Male" | "Female" | "">("");
+  const [delayTime, setDelayTime] = useState("1"); // Default: 1 minute
+  const [hasLiked, setHasLiked] = useState(false);
   const [messages, setMessages] = useState<{ text: string; self: boolean }[]>([]);
   const [input, setInput] = useState("");
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [showEmojis, setShowEmojis] = useState(false);
-  const [showSaveModal, setShowSaveModal] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [waitTime, setWaitTime] = useState(0);
-  const [memoryDetails, setMemoryDetails] = useState({ photo: "", tags: "", description: "" });
+  const [isNameRevealed, setIsNameRevealed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
     if (isLoaded && user) {
-      // Sync with server using unique Clerk ID to prevent duplicate "Harshiths"
-      socket.emit("user_joined", { 
-        externalId: user.id, 
-        name: user.firstName || "A Soul" 
-      });
+      socket.emit("user_joined", { externalId: user.id, name: user.firstName, gender: userGender });
     }
 
     socket.on("match_found", (data) => {
-      setPartner({ id: data.partnerId, name: data.partnerName });
+      setPartner({ id: data.partnerId, name: data.partnerName, partnerExternalId: data.partnerExternalId });
       setStatus("matched");
     });
 
-    socket.on("online_users_update", (users) => {
-      setOnlineUsers(users);
-    });
+    socket.on("receive_message", (data) => setMessages((prev) => [...prev, { text: data.text, self: false }]));
+    socket.on("partner_name_revealed", (data) => setPartner(prev => prev ? { ...prev, name: data.name } : null));
 
-    socket.on("partner_name_revealed", (data) => {
-      setPartner(prev => prev ? { ...prev, name: data.name } : null);
-    });
+    return () => { socket.off(); };
+  }, [user, isLoaded, userGender]);
 
-    socket.on("receive_message", (data) => {
-      setMessages((prev) => [...prev, { text: data.text, self: false }]);
-    });
-
-    socket.on("partner_disconnected", () => {
-      alert("Your partner has disconnected. ❤️");
-      resetBridge();
-    });
-
-    return () => { 
-      socket.off("match_found"); 
-      socket.off("receive_message"); 
-      socket.off("partner_disconnected");
-      socket.off("partner_name_revealed");
-      socket.off("online_users_update");
-    };
-  }, [user, isLoaded]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (status === "waiting") {
-      interval = setInterval(() => setWaitTime((prev) => prev + 1), 1000);
-    } else {
-      setWaitTime(0);
+  const handleLike = () => {
+    if (!partner) return;
+    const friend = { id: partner.partnerExternalId, name: partner.name, addedAt: new Date().toLocaleDateString() };
+    const existing = JSON.parse(localStorage.getItem("hb_friends") || "[]");
+    if (!existing.find((f: any) => f.id === friend.id)) {
+      localStorage.setItem("hb_friends", JSON.stringify([...existing, friend]));
     }
-    return () => clearInterval(interval);
-  }, [status]);
-
-  const revealMyName = () => {
-    if (partner && user) {
-      socket.emit("reveal_name", { to: partner.id, myName: user.firstName });
-      setIsNameRevealed(true);
-    }
+    setHasLiked(true);
+    alert(`Added to friends! ❤️`);
   };
 
   const scheduleMessage = () => {
     if (!input.trim() || !partner) return;
-    // Sends message delay to server (10 seconds for demo purposes)
-    socket.emit("schedule_message", { 
-      to: partner.id, 
-      text: input, 
-      delayMs: 10000 
-    });
+    socket.emit("schedule_message", { to: partner.id, text: input, delayMs: parseInt(delayTime) * 60000 });
     setInput("");
-    alert("Message scheduled! It will arrive in your partner's chat in 10 seconds. ⏳");
-  };
-
-  const getLocation = (): Promise<{ lat: number; lng: number }> => {
-    return new Promise((resolve) => {
-      if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition((pos) => {
-          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        }, () => resolve({ lat: 0, lng: 0 }));
-      } else {
-        resolve({ lat: 0, lng: 0 });
-      }
-    });
-  };
-
-  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setMemoryDetails({ ...memoryDetails, photo: reader.result as string });
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const finalizeSave = async () => {
-    setIsSaving(true);
-    const coords = await getLocation();
-    
-    const memory = {
-      id: Date.now(),
-      title: status === "matched" ? (mode === "ai" ? `Chat with ${selectedAI}` : `Human connection`) : "Direct Memory",
-      description: memoryDetails.description,
-      tags: memoryDetails.tags.split(",").map(t => t.trim()).filter(t => t !== ""),
-      photo: memoryDetails.photo,
-      coords,
-      date: new Date().toLocaleDateString(),
-      icon: status === "matched" ? (mode === "ai" ? "🤖" : "📸") : "📍",
-      pos: { top: `${Math.random() * 60 + 20}%`, left: `${Math.random() * 60 + 20}%` }
-    };
-
-    const existing = JSON.parse(localStorage.getItem("hb_memories") || "[]");
-    localStorage.setItem("hb_memories", JSON.stringify([...existing, memory]));
-    
-    setTimeout(() => {
-      setIsSaving(false);
-      setShowSaveModal(false);
-      setMemoryDetails({ photo: "", tags: "", description: "" });
-      alert("Pinned to your MemoryMap! 🗺️");
-    }, 800);
+    alert(`Scheduled for ${delayTime}m! ⏳`);
   };
 
   const startHumanMatch = () => {
-    setMode("human");
-    setStatus("waiting");
-    socket.emit("find_connection", { 
-      externalId: user?.id, 
-      name: user?.firstName || "A Soul" 
-    });
+    if (!userGender) return alert("Please select your gender first!");
+    setMode("human"); setStatus("waiting");
+    socket.emit("find_connection", { externalId: user?.id, name: user?.firstName, gender: userGender });
   };
 
-  const startAIChat = (id: string) => {
-    setMode("ai");
-    setSelectedAI(id);
-    setStatus("matched");
-    setMessages([{ text: `Hello! I'm ${id.charAt(0) + id.slice(1).toLowerCase()}. How can I support you today?`, self: false }]);
-  };
-
-  const sendMessage = async (e: React.FormEvent) => {
+  const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
-    const userMsg = input;
-    setMessages((prev) => [...prev, { text: userMsg, self: true }]);
-    setInput("");
-    setShowEmojis(false);
-
-    if (mode === "human" && partner) {
-      socket.emit("send_message", { to: partner.id, text: userMsg });
-    } else if (mode === "ai" && selectedAI) {
-      setLoadingAI(true);
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userMsg, personality: selectedAI }),
-        });
-        const data = await res.json();
-        if (data.text) setMessages((prev) => [...prev, { text: data.text, self: false }]);
-      } finally {
-        setLoadingAI(false);
-      }
+    if (input.trim() && partner) {
+      socket.emit("send_message", { to: partner.id, text: input });
+      setMessages(prev => [...prev, { text: input, self: true }]);
+      setInput("");
     }
   };
 
-  const resetBridge = () => {
-    setStatus("idle");
-    setMode(null);
-    setMessages([]);
-    setIsNameRevealed(false);
-  };
+  const resetBridge = () => { setStatus("idle"); setMode(null); setMessages([]); setIsNameRevealed(false); setHasLiked(false); };
 
   return (
     <div className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4">
       <AnimatePresence mode="wait">
         {status === "idle" && (
-          <motion.div key="idle" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <div className="lg:col-span-3 text-center space-y-8">
-              <h1 className="text-5xl font-black text-gray-900">The Bridge</h1>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <button onClick={startHumanMatch} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-pink-100 hover:border-pink-500 transition-all flex flex-col items-center">
-                  <div className="bg-pink-50 p-6 rounded-full mb-4"><User size={48} className="text-pink-500" /></div>
-                  <h3 className="text-2xl font-bold">Human Heart</h3>
-                  <p className="text-gray-500 text-sm mt-2">Find someone to talk to</p>
-                </button>
-                <div className="bg-white p-8 rounded-[40px] shadow-xl border-2 border-gray-50">
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-6">AI Companions</p>
-                  <div className="grid grid-cols-3 gap-4">
-                    {aiOptions.map(ai => (
-                      <button key={ai.id} onClick={() => startAIChat(ai.id)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${ai.color}`}>
-                        <span className="text-3xl">{ai.icon}</span>
-                        <p className="text-[10px] font-black uppercase mt-1">{ai.name}</p>
-                      </button>
-                    ))}
-                  </div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl space-y-8 text-center">
+            <h1 className="text-5xl font-black text-gray-900">The Bridge</h1>
+            <div className="bg-white p-6 rounded-3xl inline-flex gap-4 shadow-sm border border-pink-100">
+               <button onClick={() => setUserGender("Male")} className={`px-6 py-2 rounded-xl font-bold transition-all ${userGender === "Male" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-400"}`}>Male</button>
+               <button onClick={() => setUserGender("Female")} className={`px-6 py-2 rounded-xl font-bold transition-all ${userGender === "Female" ? "bg-pink-600 text-white" : "bg-slate-100 text-slate-400"}`}>Female</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <button onClick={startHumanMatch} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-pink-100 hover:border-indigo-500 flex flex-col items-center">
+                <User size={48} className="text-indigo-500 mb-4" />
+                <h3 className="text-2xl font-bold">Find Opposite Gender</h3>
+              </button>
+              <div className="bg-white p-8 rounded-[40px] shadow-xl flex flex-col justify-center gap-4">
+                <p className="text-xs font-bold text-gray-400 uppercase">AI Companions</p>
+                <div className="flex justify-center gap-4">
+                  {aiOptions.map(ai => (
+                    <button key={ai.id} onClick={() => setStatus("matched")} className={`p-4 rounded-3xl ${ai.color}`}>
+                      <span className="text-2xl">{ai.icon}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <button 
-                onClick={() => setShowSaveModal(true)}
-                className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-4 rounded-[24px] font-bold shadow-lg hover:bg-indigo-700 mx-auto"
-              >
-                <Plus size={20} /> Quick Pin to Map
-              </button>
             </div>
-
-            <div className="bg-white p-8 rounded-[40px] shadow-xl border border-pink-100 flex flex-col h-[500px]">
-              <div className="flex items-center gap-2 mb-6 text-pink-600 font-bold">
-                <Users size={20} />
-                <span>Online Hearts</span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-3">
-                {onlineUsers
-                  .filter(u => u.externalId !== user?.id) // Hide yourself
-                  .map(u => (
-                  <div key={u.id} className="flex items-center gap-3 p-3 bg-pink-50 rounded-2xl">
-                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-sm shadow-sm">❤️</div>
-                    <div>
-                      <p className="text-sm font-bold text-gray-800">{u.name}</p>
-                      <p className="text-[10px] text-green-500 font-bold uppercase">Online</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {status === "waiting" && (
-          <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-8">
-            <Heartbeat isSyncing={false} />
-            <h2 className="text-3xl font-bold text-pink-600">Finding a connection... ({waitTime}s)</h2>
-            <button onClick={resetBridge} className="px-6 py-2 border-2 border-gray-200 text-gray-400 rounded-full font-bold hover:bg-gray-100">Cancel</button>
           </motion.div>
         )}
 
         {status === "matched" && (
-          <motion.div key="matched" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md h-[650px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden border border-pink-100">
-            <div className="p-5 bg-gray-900 text-white flex justify-between items-center">
-              <button onClick={resetBridge} className="p-2 hover:bg-white/10 rounded-full transition-colors"><ArrowLeft size={20}/></button>
-              <div className="flex flex-col items-center gap-1">
-                <span className="font-bold text-lg leading-tight">{mode === "ai" ? selectedAI : partner?.name}</span>
-                {mode === "human" && !isNameRevealed && (
-                  <button onClick={revealMyName} className="text-[10px] flex items-center gap-1 text-pink-400 hover:text-pink-300">
-                    <Eye size={10}/> Reveal my name
-                  </button>
-                )}
-              </div>
-              <button onClick={() => setShowSaveModal(true)} className="p-2 bg-pink-500 rounded-full hover:bg-pink-600 transition-all shadow-md">
-                <Heart size={16} fill="white" />
-              </button>
+          <motion.div className="w-full max-w-md h-[650px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden border">
+            <div className="p-5 bg-slate-900 text-white flex justify-between items-center">
+              <button onClick={resetBridge}><ArrowLeft size={20}/></button>
+              <span className="font-bold">{partner?.name}</span>
+              <button onClick={handleLike} className={`p-2 rounded-full ${hasLiked ? "text-pink-500" : "text-white"}`}><Heart size={20} fill={hasLiked ? "currentColor" : "none"} /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.self ? "justify-end" : "justify-start"}`}>
-                  <div className={`p-4 rounded-[24px] max-w-[85%] text-sm ${msg.self ? "bg-pink-500 text-white rounded-br-none shadow-lg" : "bg-white border border-gray-100 text-gray-800 rounded-bl-none"}`}>
-                    {msg.text}
-                  </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50">
+              {messages.map((m, i) => (
+                <div key={i} className={`flex ${m.self ? "justify-end" : "justify-start"}`}>
+                  <div className={`p-4 rounded-3xl max-w-[80%] text-sm ${m.self ? "bg-indigo-600 text-white" : "bg-white border"}`}>{m.text}</div>
                 </div>
               ))}
-              {loadingAI && <div className="text-xs text-gray-400 italic flex items-center gap-2"><Sparkles size={12} className="animate-spin" /> Thinking...</div>}
-              <div ref={chatEndRef} />
             </div>
-
-            <AnimatePresence>
-              {showEmojis && (
-                <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="px-6 py-4 bg-white border-t flex flex-wrap gap-3 justify-center overflow-hidden">
-                  {emojis.map(e => (
-                    <button key={e} onClick={() => setInput(prev => prev + e)} className="text-2xl hover:scale-125 transition-transform">{e}</button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <form onSubmit={sendMessage} className="p-4 bg-white border-t flex gap-2 items-center">
-              <button type="button" onClick={() => setShowEmojis(!showEmojis)} className={`p-2 ${showEmojis ? "text-pink-500" : "text-gray-300"}`}><Smile size={24} /></button>
-              <input value={input} onChange={e => setInput(e.target.value)} placeholder="Share your heart..." className="flex-1 p-3 bg-gray-100 rounded-2xl outline-none text-sm text-black" />
-              {mode === "human" && (
-                <button type="button" onClick={scheduleMessage} className="p-3 text-gray-400 hover:text-pink-500 transition-colors">
-                  <Clock size={20} />
-                </button>
-              )}
-              <button type="submit" disabled={!input.trim()} className="bg-pink-500 text-white p-3 rounded-2xl shadow-md disabled:opacity-50"><Send size={20}/></button>
-            </form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showSaveModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div initial={{ y: 50 }} animate={{ y: 0 }} className="bg-white w-full max-w-sm rounded-[40px] p-8 shadow-2xl relative">
-              <button onClick={() => setShowSaveModal(false)} className="absolute top-6 right-6 text-gray-400"><X size={20}/></button>
-              <h3 className="text-xl font-bold mb-6">Capture the Moment</h3>
-              <div className="space-y-4">
-                <label className="block w-full h-32 border-2 border-dashed border-pink-100 rounded-3xl flex flex-col items-center justify-center cursor-pointer overflow-hidden bg-pink-50/30">
-                  {memoryDetails.photo ? (
-                    <img src={memoryDetails.photo} className="w-full h-full object-cover" alt="Memory" />
-                  ) : (
-                    <><Camera className="text-pink-400 mb-2" /> <span className="text-xs text-pink-400 font-bold">Add Photo</span></>
-                  )}
-                  <input type="file" className="hidden" accept="image/*" onChange={handleImage} />
-                </label>
-                <div className="relative">
-                  <Tag className="absolute left-3 top-3.5 text-gray-400" size={16} />
-                  <input placeholder="Tags (comma separated)..." className="w-full p-3 pl-10 bg-gray-50 rounded-xl text-sm outline-none border border-gray-100" onChange={(e) => setMemoryDetails({...memoryDetails, tags: e.target.value})} />
-                </div>
-                <textarea placeholder="Tell your story..." className="w-full p-3 bg-gray-50 rounded-xl text-sm outline-none h-24 border border-gray-100 resize-none" onChange={(e) => setMemoryDetails({...memoryDetails, description: e.target.value})} />
-                <button onClick={finalizeSave} disabled={isSaving} className="w-full py-4 bg-pink-500 text-white rounded-2xl font-bold shadow-lg hover:bg-pink-600 transition-all disabled:opacity-50">
-                  {isSaving ? "Pinning..." : "Pin to MemoryMap"}
-                </button>
+              <input value={input} onChange={e => setInput(e.target.value)} placeholder="Type a message..." className="flex-1 p-3 bg-slate-100 rounded-2xl text-sm" />
+              <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-xl border">
+                <input type="number" value={delayTime} onChange={e => setDelayTime(e.target.value)} className="w-10 bg-transparent text-center font-bold text-xs text-indigo-600 outline-none" min="1" />
+                <button type="button" onClick={scheduleMessage} className="text-slate-400 hover:text-indigo-600"><Clock size={20}/></button>
               </div>
-            </motion.div>
+              <button type="submit" className="bg-indigo-600 text-white p-3 rounded-2xl"><Send size={20}/></button>
+            </form>
           </motion.div>
         )}
       </AnimatePresence>
