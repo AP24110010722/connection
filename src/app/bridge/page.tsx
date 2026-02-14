@@ -82,7 +82,6 @@ function BridgeContent() {
     });
 
     socket.on("online_users_update", (onlineUsers: any[]) => {
-      // Logic: If I have a ?dm=ID query, try to find them
       const dmTargetId = searchParams.get("dm");
       const dmName = searchParams.get("name");
 
@@ -92,10 +91,7 @@ function BridgeContent() {
             startChat(target);
             checkFriendStatus(target.externalId);
         } else if (dmName) {
-            // OPTIONAL: If they are offline, we can still "start" the chat visually
-            // but we need to warn the user or handle the message differently.
-            // For now, we'll just alert. To enable offline messaging, you'd need DB storage for messages.
-            // alert(`${dmName} is currently offline.`);
+             // Optional: Handle offline user logic here
         }
       }
     });
@@ -185,25 +181,26 @@ function BridgeContent() {
   const reset = () => { setStatus("idle"); setMode(null); setMessages([]); setPartner(null); setIsMutual(false); router.replace("/bridge"); };
 
   return (
-    <div className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4">
+    // UPDATED: Changed bg-pink-50 to bg-slate-50
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
       <AnimatePresence mode="wait">
         {status === "idle" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-4xl space-y-8 text-center">
-            <h1 className="text-5xl font-black text-gray-900">The Bridge</h1>
+            <h1 className="text-5xl font-black text-slate-900">The Bridge</h1>
             <div className={`text-xs font-bold ${isConnected ? "text-green-500" : "text-red-500"}`}>{isConnected ? "● Server Connected" : "○ Connecting..."}</div>
             
-            <div className="bg-white p-4 rounded-2xl inline-flex gap-4 shadow-sm">
+            <div className="bg-white p-4 rounded-2xl inline-flex gap-4 shadow-sm border border-slate-100">
                <button onClick={() => setUserGender("Male")} className={`px-6 py-2 rounded-xl font-bold transition-all ${userGender === "Male" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-400"}`}>Male</button>
                <button onClick={() => setUserGender("Female")} className={`px-6 py-2 rounded-xl font-bold transition-all ${userGender === "Female" ? "bg-pink-600 text-white" : "bg-slate-100 text-slate-400"}`}>Female</button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <button onClick={handleFindConnection} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-pink-100 hover:border-indigo-500 transition-all hover:scale-105">
+              <button onClick={handleFindConnection} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-slate-100 hover:border-indigo-500 transition-all hover:scale-105">
                 <User size={48} className="text-indigo-500 mb-4 mx-auto" />
-                <h3 className="text-2xl font-bold">Find Connection</h3>
+                <h3 className="text-2xl font-bold text-slate-800">Find Connection</h3>
               </button>
               
-              <div className="bg-white p-8 rounded-[40px] shadow-xl flex flex-col justify-center gap-4 border-2 border-pink-100">
+              <div className="bg-white p-8 rounded-[40px] shadow-xl flex flex-col justify-center gap-4 border-2 border-slate-100">
                 <p className="text-xs font-bold text-gray-400 uppercase">AI Companions</p>
                 <div className="flex justify-center gap-4">
                    {Object.values(PERSONAS).map(ai => (
@@ -222,7 +219,7 @@ function BridgeContent() {
         )}
 
         {status === "matched" && (
-          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="w-full max-w-md h-[700px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden border relative">
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="w-full max-w-md h-[700px] bg-white rounded-[40px] shadow-2xl flex flex-col overflow-hidden border border-slate-100 relative">
             <div className="p-5 bg-slate-900 text-white flex justify-between items-center z-10">
               <button onClick={reset}><ArrowLeft size={20}/></button>
               <span className="font-bold flex items-center gap-2">{partner?.name} {isMutual && <span className="bg-pink-500 text-[10px] px-2 rounded-full">Mutual</span>}</span>
@@ -237,7 +234,7 @@ function BridgeContent() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.self ? "items-end" : "items-start"}`}>
-                  <div className={`p-4 rounded-3xl max-w-[80%] text-sm ${m.self ? (m.isScheduled ? "bg-indigo-100 text-indigo-800 border-2 border-indigo-200" : "bg-indigo-600 text-white") : "bg-white border text-gray-800"}`}>{m.text}</div>
+                  <div className={`p-4 rounded-3xl max-w-[80%] text-sm ${m.self ? (m.isScheduled ? "bg-indigo-100 text-indigo-800 border-2 border-indigo-200" : "bg-indigo-600 text-white") : "bg-white border border-slate-200 text-gray-800"}`}>{m.text}</div>
                   {!m.self && (
                       <button onClick={() => pinToMap(m.text)} className="mt-1 px-3 py-1 bg-pink-100 text-pink-600 text-[10px] font-bold rounded-full flex items-center gap-1 hover:bg-pink-200 transition-colors">
                           <MapPin size={10}/> Pin Memory
@@ -248,7 +245,7 @@ function BridgeContent() {
               <div ref={messagesEndRef} />
             </div>
             
-            <div className="p-4 bg-white border-t relative z-20">
+            <div className="p-4 bg-white border-t border-slate-100 relative z-20">
                 <AnimatePresence>
                 {showOptions && mode === 'human' && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute bottom-20 left-4 right-4 bg-slate-800 text-white p-6 rounded-3xl shadow-2xl mb-2">

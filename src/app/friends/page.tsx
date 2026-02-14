@@ -22,14 +22,25 @@ export default function FriendsPage() {
 
   const removeFriend = async (id: string) => {
     if(!confirm("Remove this friend?")) return;
+    
+    // Optimistically update UI
+    setFriends(prev => prev.filter(f => f.externalId !== id));
+
     try {
-        await fetch("/api/friends", {
+        const res = await fetch("/api/friends", {
             method: "DELETE",
             body: JSON.stringify({ targetId: id }),
             headers: { "Content-Type": "application/json" }
         });
+        
+        if (!res.ok) {
+            alert("Failed to sync with server. Refreshing...");
+            fetchFriends(); // Revert if failed
+        }
+    } catch(e) { 
+        alert("Network error."); 
         fetchFriends(); 
-    } catch(e) { alert("Failed to remove friend"); }
+    }
   };
 
   return (
@@ -39,7 +50,7 @@ export default function FriendsPage() {
             <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
               Your Hearts <Heart className="text-pink-500" fill="currentColor" />
             </h1>
-            <Link href="/bridge" className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold text-sm shadow-lg">Open Bridge</Link>
+            <Link href="/bridge" className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold text-sm shadow-lg hover:bg-indigo-700 transition-colors">Open Bridge</Link>
         </div>
         
         {loading ? (
@@ -53,10 +64,10 @@ export default function FriendsPage() {
                     <h3 className="font-bold text-slate-800">{friend.name}</h3>
                   </div>
                   <div className="flex gap-2">
-                    <Link href={`/bridge?dm=${friend.externalId}&name=${friend.name}`} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <Link href={`/bridge?dm=${friend.externalId}&name=${friend.name}`} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors">
                         <MessageCircle size={18} />
                     </Link>
-                    <button onClick={() => removeFriend(friend.externalId)} className="p-3 bg-red-50 text-red-400 rounded-xl hover:bg-red-100">
+                    <button onClick={() => removeFriend(friend.externalId)} className="p-3 bg-red-50 text-red-400 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors">
                         <Trash2 size={18} />
                     </button>
                   </div>

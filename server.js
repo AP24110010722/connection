@@ -54,52 +54,28 @@ io.on("connection", (socket) => {
     } catch (e) { console.error(e); }
   });
 
-  // 2. Random Match Logic (FIXED)
+  // 2. Random Match Logic
   socket.on("find_connection", (userData) => {
-    console.log(`🔍 SEARCHING: ${userData.name} (${userData.gender}) is looking for love...`);
-    
+    console.log(`🔍 SEARCHING: ${userData.name} (${userData.gender})`);
     if (!userData.gender) return;
 
-    // Clean up: Remove ANY existing instance of this user from waiting list
     waitingUsers = waitingUsers.filter(u => u.externalId !== userData.externalId);
-
-    // Filter out "Ghost" users (sockets that disconnected but stuck in array)
     waitingUsers = waitingUsers.filter(u => io.sockets.sockets.get(u.id));
 
-    // Find a partner of the OPPOSITE gender
     const partnerIndex = waitingUsers.findIndex(
       (u) => u.gender.toLowerCase() !== userData.gender.toLowerCase()
     );
 
     if (partnerIndex !== -1) {
       const partner = waitingUsers.splice(partnerIndex, 1)[0];
-      
-      console.log(`💘 MATCH FOUND: ${userData.name} <--> ${partner.name}`);
-
-      io.to(socket.id).emit("match_found", { 
-        partnerId: partner.id, 
-        partnerName: partner.name, 
-        partnerExternalId: partner.externalId 
-      });
-      io.to(partner.id).emit("match_found", { 
-        partnerId: socket.id, 
-        partnerName: userData.name, 
-        partnerExternalId: userData.externalId 
-      });
+      io.to(socket.id).emit("match_found", { partnerId: partner.id, partnerName: partner.name, partnerExternalId: partner.externalId });
+      io.to(partner.id).emit("match_found", { partnerId: socket.id, partnerName: userData.name, partnerExternalId: userData.externalId });
     } else {
-      console.log(`⏳ WAITING: ${userData.name} added to waiting list.`);
-      waitingUsers.push({ 
-        id: socket.id, 
-        externalId: userData.externalId, 
-        name: userData.name, 
-        gender: userData.gender 
-      });
+      waitingUsers.push({ id: socket.id, ...userData });
     }
-    
-    console.log("📋 Current Waiting List:", waitingUsers.map(u => `${u.name} (${u.gender})`));
   });
 
-  // 3. Add Friend
+  // 3. Add Friend (ONE WAY)
   socket.on("add_friend", async ({ targetId, myId }) => {
     const me = await User.findOne({ externalId: myId });
     const them = await User.findOne({ externalId: targetId });
@@ -110,6 +86,7 @@ io.on("connection", (socket) => {
       await me.save();
     }
     
+    // Check Mutual
     if (them.friends.includes(myId)) {
       const mySock = onlineUsers.find(u => u.externalId === myId);
       const theirSock = onlineUsers.find(u => u.externalId === targetId);
@@ -118,7 +95,23 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 4. Chat & Schedule
+  // 4. Remove Friend (NEW - MUTUAL)
+  socket.on("remove_friend", async ({ targetId, myId }) => {
+    console.log(`💔 Unfriending: ${myId} removes ${targetId}`);
+    try {
+        // Remove from both
+        await User.findOneAndUpdate({ externalId: myId }, { $pull: { friends: targetId } });
+        await User.findOneAndUpdate({ externalId: targetId }, { $pull: { friends: myId } });
+
+        // Notify both users (Optional: Client can listen to this to auto-refresh)
+        const mySock = onlineUsers.find(u => u.externalId === myId);
+        const theirSock = onlineUsers.find(u => u.externalId === targetId);
+        if (mySock) io.to(mySock.id).emit("friend_removed", targetId);
+        if (theirSock) io.to(theirSock.id).emit("friend_removed", myId);
+    } catch(e) { console.error(e); }
+  });
+
+  // 5. Chat & Schedule
   socket.on("send_message", async ({ to, text, senderId, recipientId }) => {
     if (senderId && recipientId) {
        await Message.create({ participants: [senderId, recipientId].sort(), senderId, text });
@@ -127,23 +120,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("schedule_message", async ({ to, text, sendAt, senderId, recipientId }) => {
-    const me = await User.findOne({ externalId: senderId });
-    const them = await User.findOne({ externalId: recipientId });
-
-    if (!me?.friends.includes(recipientId) || !them?.friends.includes(senderId)) {
-        return io.to(socket.id).emit("error_message", "Mutual friendship required!");
-    }
-    
     const delay = new Date(sendAt).getTime() - Date.now();
     if (delay < 0) return;
-
     setTimeout(async () => {
         await Message.create({ participants: [senderId, recipientId].sort(), senderId, text });
-        io.to(to).emit("receive_message", { 
-            senderId: "System-Schedule", 
-            text: `📅 Future: ${text}`, 
-            timestamp: new Date() 
-        });
+        io.to(to).emit("receive_message", { senderId: "System-Schedule", text: `📅 Future: ${text}`, timestamp: new Date() });
     }, delay);
   });
 

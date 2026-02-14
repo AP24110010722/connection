@@ -10,14 +10,14 @@ export async function GET() {
   await connectDB();
   const me = await User.findOne({ externalId: user.id });
   
-  // Guard clause: if no user or no friends array yet
   if (!me || !me.friends) return NextResponse.json([]);
 
-  // Find all friend details
+  // Fetch details for all friends in the list
   const friends = await User.find({ externalId: { $in: me.friends } }).select("externalId name");
   return NextResponse.json(friends);
 }
 
+// FIX: Mutual Deletion
 export async function DELETE(req: Request) {
   try {
     const user = await currentUser();
@@ -26,13 +26,24 @@ export async function DELETE(req: Request) {
     const { targetId } = await req.json();
     await connectDB();
 
-    await User.findOneAndUpdate(
-      { externalId: user.id },
-      { $pull: { friends: targetId } }
-    );
+    console.log(`🗑️ Removing connection between ${user.id} and ${targetId}`);
+
+    // 1. Remove Friend from MY list
+    // 2. Remove ME from FRIEND'S list (so they don't see me anymore)
+    await Promise.all([
+      User.findOneAndUpdate(
+        { externalId: user.id },
+        { $pull: { friends: targetId } }
+      ),
+      User.findOneAndUpdate(
+        { externalId: targetId },
+        { $pull: { friends: user.id } }
+      )
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (err) {
+    console.error("Delete error:", err);
     return NextResponse.json({ error: "Failed to remove" }, { status: 500 });
   }
 }

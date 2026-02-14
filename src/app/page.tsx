@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Heart, MessageCircle, Map as MapIcon, PenTool } from "lucide-react";
+import { SignInButton, SignedIn, SignedOut } from "@clerk/nextjs";
 
 export default function LandingPage() {
   return (
@@ -46,15 +47,32 @@ export default function LandingPage() {
           />
         </div>
 
-        <Link href="/bridge">
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="px-10 py-4 bg-gray-900 text-white rounded-full font-bold text-lg shadow-2xl hover:bg-gray-800 transition-all"
-          >
-            Start Your Journey
-          </motion.button>
-        </Link>
+        {/* LOGIC: If logged in, go to Bridge. If not, Open Login Modal */}
+        
+        <SignedIn>
+          <Link href="/bridge">
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="px-10 py-4 bg-gray-900 text-white rounded-full font-bold text-lg shadow-2xl hover:bg-gray-800 transition-all"
+            >
+              Enter The Bridge
+            </motion.button>
+          </Link>
+        </SignedIn>
+
+        <SignedOut>
+          <SignInButton mode="modal">
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="px-10 py-4 bg-pink-600 text-white rounded-full font-bold text-lg shadow-2xl hover:bg-pink-700 transition-all"
+            >
+              Start Your Journey
+            </motion.button>
+          </SignInButton>
+        </SignedOut>
+
       </motion.div>
     </div>
   );
