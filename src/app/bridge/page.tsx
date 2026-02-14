@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useUser } from "@clerk/nextjs"; 
 import io from "socket.io-client";
 import Heartbeat from "@/components/Heartbeat";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, User, Sparkles, ArrowLeft, Smile, Heart, Camera, Tag, MapPin, X, Eye, Users, Plus } from "lucide-react";
+import { 
+  Send, User, Sparkles, ArrowLeft, Smile, 
+  Heart, Camera, Tag, MapPin, X, Eye, Users, Plus, Clock 
+} from "lucide-react";
 
 const socket = io("http://localhost:3001");
 
@@ -17,11 +21,12 @@ const aiOptions = [
 const emojis = ["❤️", "✨", "😊", "🫂", "🌙", "🔥", "🌿", "🌸", "☁️", "🙏"];
 
 export default function BridgePage() {
+  const { user, isLoaded } = useUser(); 
   const [mode, setMode] = useState<"human" | "ai" | null>(null);
   const [status, setStatus] = useState<"idle" | "waiting" | "matched">("idle");
   const [partner, setPartner] = useState<{ id: string; name: string } | null>(null);
   const [isNameRevealed, setIsNameRevealed] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<any[]>([]); // NEW: Track online friends
+  const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   const [selectedAI, setSelectedAI] = useState<string | null>(null);
   const [messages, setMessages] = useState<{ text: string; self: boolean }[]>([]);
   const [input, setInput] = useState("");
@@ -38,20 +43,23 @@ export default function BridgePage() {
   }, [messages]);
 
   useEffect(() => {
-    // NEW: Report online status when entering the bridge
-    socket.emit("user_joined", { name: "Harshith" });
+    if (isLoaded && user) {
+      // Sync with server using unique Clerk ID to prevent duplicate "Harshiths"
+      socket.emit("user_joined", { 
+        externalId: user.id, 
+        name: user.firstName || "A Soul" 
+      });
+    }
 
     socket.on("match_found", (data) => {
       setPartner({ id: data.partnerId, name: data.partnerName });
       setStatus("matched");
     });
 
-    // NEW: Listen for global online user updates
     socket.on("online_users_update", (users) => {
       setOnlineUsers(users);
     });
 
-    // NEW: Listen for partner revealing their name
     socket.on("partner_name_revealed", (data) => {
       setPartner(prev => prev ? { ...prev, name: data.name } : null);
     });
@@ -72,7 +80,7 @@ export default function BridgePage() {
       socket.off("partner_name_revealed");
       socket.off("online_users_update");
     };
-  }, []);
+  }, [user, isLoaded]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -84,12 +92,23 @@ export default function BridgePage() {
     return () => clearInterval(interval);
   }, [status]);
 
-  // NEW: Emit name reveal event
   const revealMyName = () => {
-    if (partner) {
-      socket.emit("reveal_name", { to: partner.id, myName: "Harshith" });
+    if (partner && user) {
+      socket.emit("reveal_name", { to: partner.id, myName: user.firstName });
       setIsNameRevealed(true);
     }
+  };
+
+  const scheduleMessage = () => {
+    if (!input.trim() || !partner) return;
+    // Sends message delay to server (10 seconds for demo purposes)
+    socket.emit("schedule_message", { 
+      to: partner.id, 
+      text: input, 
+      delayMs: 10000 
+    });
+    setInput("");
+    alert("Message scheduled! It will arrive in your partner's chat in 10 seconds. ⏳");
   };
 
   const getLocation = (): Promise<{ lat: number; lng: number }> => {
@@ -143,7 +162,10 @@ export default function BridgePage() {
   const startHumanMatch = () => {
     setMode("human");
     setStatus("waiting");
-    socket.emit("find_connection", { name: "Harshith" });
+    socket.emit("find_connection", { 
+      externalId: user?.id, 
+      name: user?.firstName || "A Soul" 
+    });
   };
 
   const startAIChat = (id: string) => {
@@ -189,7 +211,6 @@ export default function BridgePage() {
   return (
     <div className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4">
       <AnimatePresence mode="wait">
-        {/* IDLE: Selection Screen + NEW Online Hearts & Quick Pin */}
         {status === "idle" && (
           <motion.div key="idle" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-8">
             <div className="lg:col-span-3 text-center space-y-8">
@@ -212,7 +233,6 @@ export default function BridgePage() {
                   </div>
                 </div>
               </div>
-              {/* NEW: Quick Pin Button */}
               <button 
                 onClick={() => setShowSaveModal(true)}
                 className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-4 rounded-[24px] font-bold shadow-lg hover:bg-indigo-700 mx-auto"
@@ -221,19 +241,20 @@ export default function BridgePage() {
               </button>
             </div>
 
-            {/* NEW: Online Hearts Sidebar */}
             <div className="bg-white p-8 rounded-[40px] shadow-xl border border-pink-100 flex flex-col h-[500px]">
               <div className="flex items-center gap-2 mb-6 text-pink-600 font-bold">
                 <Users size={20} />
                 <span>Online Hearts</span>
               </div>
               <div className="flex-1 overflow-y-auto space-y-3">
-                {onlineUsers.map(user => (
-                  <div key={user.id} className="flex items-center gap-3 p-3 bg-pink-50 rounded-2xl">
+                {onlineUsers
+                  .filter(u => u.externalId !== user?.id) // Hide yourself
+                  .map(u => (
+                  <div key={u.id} className="flex items-center gap-3 p-3 bg-pink-50 rounded-2xl">
                     <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-sm shadow-sm">❤️</div>
                     <div>
-                      <p className="text-sm font-bold text-gray-800">{user.name}</p>
-                      <p className="text-[10px] text-green-500 font-bold uppercase">Connected</p>
+                      <p className="text-sm font-bold text-gray-800">{u.name}</p>
+                      <p className="text-[10px] text-green-500 font-bold uppercase">Online</p>
                     </div>
                   </div>
                 ))}
@@ -292,6 +313,11 @@ export default function BridgePage() {
             <form onSubmit={sendMessage} className="p-4 bg-white border-t flex gap-2 items-center">
               <button type="button" onClick={() => setShowEmojis(!showEmojis)} className={`p-2 ${showEmojis ? "text-pink-500" : "text-gray-300"}`}><Smile size={24} /></button>
               <input value={input} onChange={e => setInput(e.target.value)} placeholder="Share your heart..." className="flex-1 p-3 bg-gray-100 rounded-2xl outline-none text-sm text-black" />
+              {mode === "human" && (
+                <button type="button" onClick={scheduleMessage} className="p-3 text-gray-400 hover:text-pink-500 transition-colors">
+                  <Clock size={20} />
+                </button>
+              )}
               <button type="submit" disabled={!input.trim()} className="bg-pink-500 text-white p-3 rounded-2xl shadow-md disabled:opacity-50"><Send size={20}/></button>
             </form>
           </motion.div>
