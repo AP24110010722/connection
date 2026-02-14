@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Plus, X, Trash2, Calendar, Smile, Users } from "lucide-react";
+import { MapPin, Plus, X, Trash2, Calendar, Smile } from "lucide-react";
 import { useMapEvents } from "react-leaflet";
 
 const MapContainer = dynamicImport(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
@@ -20,22 +20,17 @@ const EMOJIS = ["❤️", "✨", "😊", "🫂", "🏠", "✈️", "🎓", "🔥
 
 export default function MapView() {
   const [memories, setMemories] = useState<any[]>([]); 
-  const [friends, setFriends] = useState<any[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<any>(null);
   const [newLocation, setNewLocation] = useState<{lat: number, lng: number} | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "", icon: "❤️" });
-  const [showFriends, setShowFriends] = useState(false); // Toggle Friend List
   const [isMounted, setIsMounted] = useState(false);
 
-  // FETCH DATA
   const refreshData = async () => {
     try {
       const memRes = await fetch("/api/memories");
-      setMemories(await memRes.json());
-      
-      const friendRes = await fetch("/api/friends");
-      setFriends(await friendRes.json());
-    } catch (error) { console.error(error); }
+      const data = await memRes.json();
+      setMemories(Array.isArray(data) ? data : []);
+    } catch (error) { console.error("Error fetching memories:", error); }
   };
 
   useEffect(() => {
@@ -66,7 +61,6 @@ export default function MapView() {
     setFormData({ title: "", description: "", icon: "❤️" });
   };
 
-  // DELETE PIN (FIXED)
   const deletePin = async (id: string) => {
       if(!confirm("Delete this memory forever?")) return;
       await fetch("/api/memories", {
@@ -78,29 +72,10 @@ export default function MapView() {
       setSelectedMemory(null);
   };
 
-  // DELETE FRIEND (NEW)
-  const removeFriend = async (id: string) => {
-      if(!confirm("Remove this friend?")) return;
-      await fetch("/api/friends", {
-          method: "DELETE",
-          body: JSON.stringify({ targetId: id }),
-          headers: { "Content-Type": "application/json" }
-      });
-      await refreshData();
-  };
-
   if (!isMounted) return <div className="h-[600px] w-full bg-slate-100 flex items-center justify-center rounded-[40px]"><p className="text-slate-400 font-bold animate-pulse">Loading Map...</p></div>;
 
   return (
     <div className="relative w-full h-[600px] rounded-[40px] overflow-hidden border-8 border-white shadow-2xl z-0">
-      
-      {/* FRIENDS TOGGLE BUTTON */}
-      <div className="absolute top-4 right-4 z-[500]">
-        <button onClick={() => setShowFriends(!showFriends)} className="bg-white p-3 rounded-full shadow-xl hover:bg-slate-50 text-indigo-600">
-            <Users size={20} />
-        </button>
-      </div>
-
       <MapContainer center={[20, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapClickHandler onMapClick={(lat, lng) => { setNewLocation({ lat, lng }); setSelectedMemory(null); }} />
@@ -147,23 +122,6 @@ export default function MapView() {
                 <div className="bg-indigo-50/50 p-4 rounded-2xl italic text-gray-700 text-sm border leading-relaxed text-left">"{selectedMemory.description}"</div>
             </div>
             <button onClick={() => deletePin(selectedMemory._id)} className="w-full py-3 bg-red-50 text-red-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all flex items-center justify-center gap-2"><Trash2 size={14} /> Remove Pin</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* FRIENDS LIST OVERLAY */}
-      <AnimatePresence>
-        {showFriends && (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="absolute top-16 right-4 w-64 bg-white rounded-3xl shadow-2xl z-[900] p-4 border border-slate-100">
-             <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Users size={12}/> Your Friends</h3>
-             <div className="space-y-2 max-h-60 overflow-y-auto">
-                {friends.length === 0 ? <p className="text-sm text-slate-400 italic">No friends yet.</p> : friends.map(f => (
-                    <div key={f._id} className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                        <span className="text-sm font-bold text-slate-700">{f.name}</span>
-                        <button onClick={() => removeFriend(f.externalId)} className="p-1.5 bg-white text-red-400 rounded-full hover:bg-red-50 shadow-sm"><Trash2 size={12}/></button>
-                    </div>
-                ))}
-             </div>
           </motion.div>
         )}
       </AnimatePresence>

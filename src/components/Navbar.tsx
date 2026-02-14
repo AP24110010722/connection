@@ -1,32 +1,25 @@
-"use client";
 import Link from "next/link";
-import { UserButton, SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
+import { Heart, Map as MapIcon, MessageSquare, Users, PenTool } from "lucide-react";
 
 export default function Navbar() {
   return (
-    <nav className="flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur-md border-b border-pink-100 sticky top-0 z-50">
-      <Link href="/" className="text-2xl font-bold text-pink-500 flex items-center gap-2">
-        ❤️ <span className="hidden md:inline">HeartBridge</span>
+    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur-xl border border-white/50 px-8 py-4 rounded-full shadow-2xl z-[5000] flex items-center gap-8">
+      <Link href="/" className="text-slate-400 hover:text-indigo-600 transition-colors">
+        <Heart size={24} />
       </Link>
-      
-      <div className="flex items-center gap-6 font-medium text-gray-600">
-        <Link href="/bridge" className="hover:text-pink-500 transition-colors">Bridge</Link>
-        <Link href="/letters" className="hover:text-pink-500 transition-colors">Letters</Link>
-        <Link href="/map" className="hover:text-pink-500 transition-colors">Map</Link>
-        
-        <div className="ml-4 pl-4 border-l border-gray-200">
-          <SignedIn>
-            <UserButton afterSignOutUrl="/" />
-          </SignedIn>
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button className="bg-pink-500 text-white px-4 py-2 rounded-full text-sm hover:bg-pink-600 transition-all">
-                Sign In
-              </button>
-            </SignInButton>
-          </SignedOut>
-        </div>
-      </div>
+      <Link href="/bridge" className="text-slate-400 hover:text-indigo-600 transition-colors">
+        <MessageSquare size={24} />
+      </Link>
+      <Link href="/map" className="text-slate-400 hover:text-indigo-600 transition-colors">
+        <MapIcon size={24} />
+      </Link>
+      {/* NEW FRIENDS TAB */}
+      <Link href="/friends" className="text-slate-400 hover:text-indigo-600 transition-colors">
+        <Users size={24} />
+      </Link>
+      <Link href="/letters" className="text-slate-400 hover:text-indigo-600 transition-colors">
+        <PenTool size={24} />
+      </Link>
     </nav>
   );
 }
