@@ -1,33 +1,24 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { PERSONAS } from "./constants";
 
-const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(apiKey || "");
+// Use the server-side key (no NEXT_PUBLIC prefix)
+const apiKey = process.env.GEMINI_API_KEY;
 
-export const personas = {
-  LUNA: {
-    name: "Luna",
-    style: "The Gentle Listener",
-    instruction: "You are Luna, an empathetic listener. Use soft language. Validate feelings. KEEP RESPONSES UNDER 20 WORDS. Use 🌙✨.",
-  },
-  LEO: {
-    name: "Leo",
-    style: "The Enthusiastic Motivator",
-    instruction: "You are Leo, a high-energy motivator. Focus on action and positivity. KEEP RESPONSES UNDER 20 WORDS. Use 🔥🚀.",
-  },
-  SAGE: {
-    name: "Sage",
-    style: "The Wise Guide",
-    instruction: "You are Sage, a calm philosopher. Help reframe problems with wisdom and logic. KEEP RESPONSES UNDER 20 WORDS. Use 🌿🧘.",
+export async function generateHeartResponse(personalityId: string, userInput: string) {
+  if (!apiKey) {
+    console.error("Missing GEMINI_API_KEY in environment variables");
+    return "I'm having a little trouble connecting to my heart right now. (Server Config Error)";
   }
-};
 
-export async function generateHeartResponse(personality: keyof typeof personas, userInput: string) {
-  if (!apiKey) throw new Error("API Key is missing from .env.local");
+  const genAI = new GoogleGenerativeAI(apiKey);
+  
+  // Validate personality
+  const persona = Object.values(PERSONAS).find(p => p.id === personalityId);
+  if (!persona) return "I don't know who I am right now. ❤️";
 
-  // Updated to the exact model string supported by your key
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash", 
-    systemInstruction: personas[personality].instruction
+    model: process.env.NEXT_PUBLIC_GEMINI_MODEL || "gemini-1.5-flash", 
+    systemInstruction: persona.instruction
   });
 
   try {

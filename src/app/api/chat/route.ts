@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
-import { generateHeartResponse, personas } from "@/lib/gemini";
+import { generateHeartResponse } from "@/lib/gemini";
 
 export async function POST(req: Request) {
   try {
     const { message, personality } = await req.json();
 
-    const aiResponse = await generateHeartResponse(personality as keyof typeof personas, message);
+    if (!message || !personality) {
+      return NextResponse.json({ text: "Please say something first. ❤️" }, { status: 400 });
+    }
 
-    // Ensure we return the JSON exactly as the frontend expects it
+    const aiResponse = await generateHeartResponse(personality, message);
+
     return NextResponse.json({ text: aiResponse });
   } catch (error: any) {
     console.error("API ROUTE ERROR:", error.message);
-    return NextResponse.json({ text: "I'm having a moment of silence. Try again? ❤️" });
+    return NextResponse.json({ text: "I'm having a moment of silence. Try again? ❤️" }, { status: 500 });
   }
 }

@@ -1,60 +1,93 @@
+require("dotenv").config({ path: ".env.local" });
 const { Server } = require("socket.io");
 const http = require("http");
+const mongoose = require("mongoose");
 
 const httpServer = http.createServer();
 const io = new Server(httpServer, {
-  cors: { origin: "http://localhost:3000", methods: ["GET", "POST"] },
+  cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
+// --- MONGO SETUP ---
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/heartbridge';
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("✅ MongoDB Connected!"))
+  .catch(err => console.error("❌ DB Error:", err));
+
+const UserSchema = new mongoose.Schema({
+  externalId: { type: String, required: true, unique: true },
+  name: String,
+  friends: [String],
+});
+const MessageSchema = new mongoose.Schema({
+  participants: [String],
+  senderId: String,
+  text: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
+const Message = mongoose.models.Message || mongoose.model("Message", MessageSchema);
+
+// --- GLOBAL STATE ---
+let onlineUsers = [];
 let waitingUsers = []; 
-let onlineUsers = []; 
 
 io.on("connection", (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log(`🔌 New Connection: ${socket.id}`);
 
-  socket.on("user_joined", (userData) => {
-    onlineUsers = onlineUsers.filter(u => u.externalId !== userData.externalId);
-    const user = { 
-      id: socket.id, 
-      externalId: userData.externalId, 
-      name: userData.name || "Anonymous", 
-      gender: userData.gender, // Store gender for matching
-      status: "online" 
-    };
-    onlineUsers.push(user);
-    io.emit("online_users_update", onlineUsers);
+  // 1. User Joins
+  socket.on("user_joined", async (userData) => {
+    if (!userData || !userData.externalId) return;
+    console.log(`👤 User Joined: ${userData.name} (${userData.gender})`);
+
+    try {
+      await User.findOneAndUpdate(
+        { externalId: userData.externalId },
+        { $set: { name: userData.name }, $setOnInsert: { friends: [] } },
+        { upsert: true, returnDocument: 'after' }
+      );
+
+      onlineUsers = onlineUsers.filter(u => u.externalId !== userData.externalId);
+      onlineUsers.push({ ...userData, id: socket.id });
+      io.emit("online_users_update", onlineUsers);
+    } catch (e) { console.error(e); }
   });
 
-  socket.on("schedule_message", ({ to, text, delayMs }) => {
-    setTimeout(() => {
-      io.to(to).emit("receive_message", {
-        senderId: "System-Schedule",
-        text: `📅 Scheduled: ${text}`,
-        timestamp: new Date().toISOString()
-      });
-    }, delayMs);
-  });
-
+  // 2. Random Match Logic (FIXED)
   socket.on("find_connection", (userData) => {
-    // Look for a partner of the OPPOSITE gender
+    console.log(`🔍 SEARCHING: ${userData.name} (${userData.gender}) is looking for love...`);
+    
+    if (!userData.gender) return;
+
+    // Clean up: Remove ANY existing instance of this user from waiting list
+    waitingUsers = waitingUsers.filter(u => u.externalId !== userData.externalId);
+
+    // Filter out "Ghost" users (sockets that disconnected but stuck in array)
+    waitingUsers = waitingUsers.filter(u => io.sockets.sockets.get(u.id));
+
+    // Find a partner of the OPPOSITE gender
     const partnerIndex = waitingUsers.findIndex(
-      (u) => u.gender !== userData.gender && u.externalId !== userData.externalId
+      (u) => u.gender.toLowerCase() !== userData.gender.toLowerCase()
     );
 
     if (partnerIndex !== -1) {
       const partner = waitingUsers.splice(partnerIndex, 1)[0];
       
+      console.log(`💘 MATCH FOUND: ${userData.name} <--> ${partner.name}`);
+
       io.to(socket.id).emit("match_found", { 
         partnerId: partner.id, 
-        partnerName: "Hidden Heart", 
+        partnerName: partner.name, 
         partnerExternalId: partner.externalId 
       });
       io.to(partner.id).emit("match_found", { 
         partnerId: socket.id, 
-        partnerName: "Hidden Heart", 
+        partnerName: userData.name, 
         partnerExternalId: userData.externalId 
       });
     } else {
+      console.log(`⏳ WAITING: ${userData.name} added to waiting list.`);
       waitingUsers.push({ 
         id: socket.id, 
         externalId: userData.externalId, 
@@ -62,23 +95,65 @@ io.on("connection", (socket) => {
         gender: userData.gender 
       });
     }
+    
+    console.log("📋 Current Waiting List:", waitingUsers.map(u => `${u.name} (${u.gender})`));
   });
 
-  socket.on("reveal_name", ({ to, myName }) => {
-    io.to(to).emit("partner_name_revealed", { name: myName });
+  // 3. Add Friend
+  socket.on("add_friend", async ({ targetId, myId }) => {
+    const me = await User.findOne({ externalId: myId });
+    const them = await User.findOne({ externalId: targetId });
+    if (!me || !them) return;
+
+    if (!me.friends.includes(targetId)) {
+      me.friends.push(targetId);
+      await me.save();
+    }
+    
+    if (them.friends.includes(myId)) {
+      const mySock = onlineUsers.find(u => u.externalId === myId);
+      const theirSock = onlineUsers.find(u => u.externalId === targetId);
+      if (mySock) io.to(mySock.id).emit("friendship_status", { with: targetId, status: "mutual" });
+      if (theirSock) io.to(theirSock.id).emit("friendship_status", { with: myId, status: "mutual" });
+    }
   });
 
-  socket.on("send_message", ({ to, text }) => {
-    io.to(to).emit("receive_message", { senderId: socket.id, text: text, timestamp: new Date().toISOString() });
+  // 4. Chat & Schedule
+  socket.on("send_message", async ({ to, text, senderId, recipientId }) => {
+    if (senderId && recipientId) {
+       await Message.create({ participants: [senderId, recipientId].sort(), senderId, text });
+    }
+    io.to(to).emit("receive_message", { senderId: socket.id, text, timestamp: new Date() });
+  });
+
+  socket.on("schedule_message", async ({ to, text, sendAt, senderId, recipientId }) => {
+    const me = await User.findOne({ externalId: senderId });
+    const them = await User.findOne({ externalId: recipientId });
+
+    if (!me?.friends.includes(recipientId) || !them?.friends.includes(senderId)) {
+        return io.to(socket.id).emit("error_message", "Mutual friendship required!");
+    }
+    
+    const delay = new Date(sendAt).getTime() - Date.now();
+    if (delay < 0) return;
+
+    setTimeout(async () => {
+        await Message.create({ participants: [senderId, recipientId].sort(), senderId, text });
+        io.to(to).emit("receive_message", { 
+            senderId: "System-Schedule", 
+            text: `📅 Future: ${text}`, 
+            timestamp: new Date() 
+        });
+    }, delay);
   });
 
   socket.on("disconnect", () => {
+    console.log(`❌ Disconnected: ${socket.id}`);
     waitingUsers = waitingUsers.filter(u => u.id !== socket.id);
     onlineUsers = onlineUsers.filter(u => u.id !== socket.id);
     io.emit("online_users_update", onlineUsers);
-    socket.broadcast.emit("partner_disconnected", { partnerId: socket.id });
   });
 });
 
 const PORT = 3001;
-httpServer.listen(PORT, () => console.log(`Production Server running on ${PORT}`));
+httpServer.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
