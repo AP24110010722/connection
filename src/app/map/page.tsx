@@ -3,17 +3,18 @@
 import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import MapView from "@/components/MapView";
-import { Users, HeartHandshake } from "lucide-react"; // Removed unnecessary imports
+import { Users, HeartHandshake } from "lucide-react"; 
 import Link from "next/link";
-import io from "socket.io-client"; // Import io, but don't use it yet
+import io from "socket.io-client";
 
 export default function MemoryMapPage() {
   const { user: currentUser, isLoaded } = useUser();
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    // Initialize socket INSIDE useEffect
-    const socket = io("http://localhost:3001");
+    // UPDATED: Use env variable for production, fallback to localhost for dev
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+    const socket = io(socketUrl);
 
     if (isLoaded && currentUser) {
       socket.emit("user_joined", { externalId: currentUser.id, name: currentUser.firstName });

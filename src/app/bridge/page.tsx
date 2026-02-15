@@ -50,7 +50,10 @@ function BridgeContent() {
   };
 
   useEffect(() => {
-    const newSocket = io("http://localhost:3001", { autoConnect: false });
+    // UPDATED: Use env variable for production, fallback to localhost for dev
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+    const newSocket = io(socketUrl, { autoConnect: false });
+    
     setSocket(newSocket);
     newSocket.on("connect", () => setIsConnected(true));
     newSocket.on("disconnect", () => setIsConnected(false));
