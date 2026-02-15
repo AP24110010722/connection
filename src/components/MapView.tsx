@@ -6,6 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X, Trash2, Calendar } from "lucide-react";
 import { useMapEvents } from "react-leaflet";
 
+// FIXED: Import CSS at the top with @ts-ignore to prevent build errors
+// @ts-ignore
+import "leaflet/dist/leaflet.css";
+
 // Dynamic imports to prevent SSR issues with Leaflet
 const MapContainer = dynamicImport(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
 const TileLayer = dynamicImport(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false });
@@ -38,9 +42,12 @@ export default function MapView() {
     setIsMounted(true);
     (async () => {
       // Fix for Leaflet marker icons
-      const L = await import("leaflet");
-      await import("leaflet/dist/leaflet.css");
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      const L = (await import("leaflet")).default || await import("leaflet");
+      
+      // REMOVED: await import("leaflet/dist/leaflet.css"); <- This was causing the error
+      
+      // @ts-ignore
+      delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
         iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
@@ -83,7 +90,6 @@ export default function MapView() {
         <MapClickHandler onMapClick={(lat, lng) => { setNewLocation({ lat, lng }); setSelectedMemory(null); }} />
         
         {memories.map((m) => (
-          // SAFEGUARD: Check if coords exist before rendering Marker
           (m.coords && m.coords.lat && m.coords.lng) ? (
             <Marker key={m._id} position={[m.coords.lat, m.coords.lng]} eventHandlers={{ click: () => { setSelectedMemory(m); setNewLocation(null); } }}>
                 <Popup>{m.title}</Popup>
