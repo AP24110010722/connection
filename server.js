@@ -3,7 +3,13 @@ const { Server } = require("socket.io");
 const http = require("http");
 const mongoose = require("mongoose");
 
-const httpServer = http.createServer();
+// 1. UPDATED: Add a simple request listener for Render's health check
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("HeartBridge Socket Server is Running!");
+});
+
+// 2. UPDATED: CORS is already good ("*"), keep it.
 const io = new Server(httpServer, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
@@ -136,5 +142,6 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = 3001;
+// 3. UPDATED: Use process.env.PORT for Render, fallback to 3001 for local
+const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
